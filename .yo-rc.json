@@ -1,0 +1,28 @@
+{
+  "generator-sap-partner-eng": {
+    "package_version": "0.2.17",
+    "project_name": "mtx4",
+    "app_name": "mtx4",
+    "app_desc": "MTX4",
+    "router_name": "mtx4-app",
+    "domain_name": "cfapps.us10.hana.ondemand.com",
+    "router_path": "app",
+    "database_path": "db",
+    "services_path": "srv",
+    "uaa_res_name": "mtx4-uaa",
+    "uaa_svc_name": "MTX4_UAA",
+    "database_name": "mtx4-hdb",
+    "db_schema_name": "MTX4_DB",
+    "hdi_res_name": "mtx4-hdi",
+    "hdi_svc_name": "MTX4_HDI",
+    "services_name": "mtx4-srv",
+    "services_api": "mtx4_svc_api",
+    "services_be": "mtx4_svc_be",
+    "services_route": "catalog",
+    "multitenant_enabled": true,
+    "reg_res_name": "mtx4-reg",
+    "reg_svc_name": "MTX4_REG",
+    "mgd_res_name": "mtx4-mgd",
+    "mgd_svc_name": "MTX4_MGD"
+  }
+}

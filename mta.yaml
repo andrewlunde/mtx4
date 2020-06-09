@@ -1,0 +1,212 @@
+## Generated mta.yaml based on yo sap-partner-eng version 0.2.17
+## appName = mtx4
+## language=nodejs; multiTenant=false
+## approuter=mtx4-app
+_schema-version: '3.1'
+ID: mtx4
+version: 0.0.1
+description: MTX4
+parameters:
+   enable-parallel-deployments: true
+  
+  
+#build-parameters:
+#  before-all:
+#   - builder: custom
+#     commands:
+#      - npm install
+#      - npx cds build
+
+modules:
+
+### New Modules Here ###
+
+# cf push mtx4-hdb -p db -k 512M -m 512M
+ - name: mtx4-hdb
+   type: hdb
+   path: db
+   build-parameters:
+      ignore: ["node_modules/"]
+   parameters:
+      memory: 512M
+      disk-quota: 512M
+   requires:
+    - name: mtx4-hdi
+
+# cf push mtx4-srv -p srv -n mtx4-srv -d cfapps.us10.hana.ondemand.com -k 512M -m 512M
+ - name: mtx4-srv
+   type: nodejs
+   build-parameters:
+      ignore: ["node_modules/"]
+   path: srv
+   properties:
+      EXIT: 1  # required by deploy.js task to terminate
+      SAP_JWT_TRUST_ACL: [{"clientid":"*","identityzone":"sap-provisioning"}]  # Trust between server and SaaS Manager
+   parameters:
+      memory: 512M
+      disk-quota: 512M
+      #host: ${org}-${space}-mtx4-srv
+      #domain: cfapps.us10.hana.ondemand.com
+   provides:
+    - name: mtx4_svc_api
+      properties:
+         url: ${default-url}
+   requires:
+    - name: mtx4-hdi
+    - name: mtx4-uaa
+    - name: mtx4-reg
+    - name: mtx4-mgd
+
+
+# cf push mtx4-app -p app -n mtx4-app -d cfapps.us10.hana.ondemand.com -k 256M -m 256M
+ - name: mtx4-app
+   type: html5
+   path: app
+   build-parameters:
+      ignore: ["node_modules/"]
+   parameters:
+      #host: ${org}-${space}-mtx4-app
+      #domain: cfapps.us10.hana.ondemand.com
+      #routes:
+      #  - route: mtx4-app-${space}-${app-name}.${default-domain}
+      disk-quota: 256M
+      memory: 256M
+   provides:
+    - name: Router_api
+      properties:
+         url: ${default-url}
+         application: ${app-name}
+# CDS-MTX
+   properties:
+      TENANT_HOST_PATTERN: '^(.*)-${space}-${app-name}.cfapps.us10.hana.ondemand.com'
+   requires:
+   # cf bind-service mtx4-app MTX4_UAA
+    - name: mtx4-uaa
+   ### New Destinations Here ###
+    - name: mtx4_svc_api
+      group: destinations
+      properties:
+         name: mtx4_svc_be
+         url: ~{url}
+         forwardAuthToken: true
+
+resources:
+
+# cf create-service xsuaa application MTX4_UAA -c ./cds-security.json
+ - name: mtx4-uaa
+   type: org.cloudfoundry.managed-service
+   requires:
+    - name: Router_api
+   properties:
+      XSAPPNAME: ${xsuaa-app}
+   parameters:
+      # Re-run the following command after changing any @(requires: []) definitions in srv/*.cds
+      # Run this from the root of the project and uncomment the path:
+      # cds compile srv/ --to xsuaa,json > cds-security.json
+      #path: ./cds-security.json
+      # The combination of path: and config.scopes: Doesn't seem work.  Use one or the other.
+      # cds compile srv/ --to xsuaa,yaml and make sure the config: below matches
+      #path: ./cds-security.json
+      #path: ./xs-security.json
+      service: xsuaa
+      service-plan: application
+      service-name: MTX4_UAA
+      xsuaa-app: ${space}-~{Router_api/application}
+      # Define within config what used to be in the xs-security.json file.  path: now pulls in cds scopes/role templates
+      # Convert with https://www.json2yaml.com/
+      # https://github.wdf.sap.corp/pages/cap/guides/authorization#role-assignments-with-xsuaa
+      config:
+         xsappname: ${xsuaa-app}
+         ### tenant-mode
+         tenant-mode: shared
+         description: Security profile of the mtx4 application
+         scopes:
+          - name: "$XSAPPNAME.Callback"
+            description: With this scope set, the callbacks for tenant onboarding, offboarding and getDependencies can be called.
+            grant-as-authority-to-apps: 
+             - "$XSAPPNAME(application,sap-provisioning,tenant-onboarding)"
+          - name: "$XSAPPNAME.Administrator"
+            description: Administrate the application
+          - name: "$XSAPPNAME.User"
+            description: Use the application
+         role-templates:
+          - name: Administrator
+            description: Administrator
+            scope-references:
+             - "$XSAPPNAME.Administrator"
+          - name: User
+            description: User
+            scope-references:
+             - "$XSAPPNAME.User"
+         oauth2-configuration:
+            redirect-uris: 
+             - "http*://*.cfapps.us10.hana.ondemand.com/**"
+
+# CAP-MTX Managed HANA (Internal Service Manager)
+# - name: mtx4-mgd
+#   type: org.cloudfoundry.managed-service
+#   requires:
+#    - name: mtx4_services_api
+#   parameters:
+#      service-plan: hdi-shared
+#      service: managed-hana
+#      service-name: mtx4_MGD
+
+# CAP-MXT Registration
+# - name: mtx4-reg
+#   type: org.cloudfoundry.managed-service
+#   requires:
+#    - name: mtx4-uaa
+#   parameters:
+#    service: saas-registry
+#    service-plan: application
+#    service-name: mtx4_REG
+#    config:
+#      xsappname: ~{mtx4-uaa/XSAPPNAME}
+#      appName: mtx4
+#      displayName: mtx4
+#      description: 'mtx4 Multitenant App'
+#      category: 'mtx4 Category'
+#      appUrls:
+#         onSubscription: https://mtx4-srv-${space}.cfapps.us10.hana.ondemand.com/mtx/v1/provisioning/tenant/{tenantId}
+
+### New Resources Here ###
+
+# cf create-service hana hdi-shared MTX4_HDI -c '{"config":{"schema":"MTX4_DB"}}'
+ - name: mtx4-hdi
+   type: com.sap.xs.hdi-container
+   parameters:
+      service-name: MTX4_HDI
+      config:
+         schema: MTX4_DB
+
+# CAP-MTX Managed HANA (Internal Service Manager)
+ - name: mtx4-mgd
+   type: org.cloudfoundry.managed-service
+   requires:
+    - name: mtx4-uaa
+   parameters:
+      service: managed-hana
+      service-plan: hdi-shared
+      service-name: MTX4_MGD
+
+# Multitenant Registration(using CAP-MTX style url)
+ - name: mtx4-reg
+   type: org.cloudfoundry.managed-service
+   requires:
+    - name: mtx4-uaa
+   parameters:
+      service: saas-registry
+      service-plan: application
+      service-name: MTX4_REG
+      config:
+         xsappname: ~{mtx4-uaa/XSAPPNAME}
+         appName: mtx4
+         displayName: mtx4
+         description: 'mtx4 Multitenant App'
+         category: 'mtx4 Category'
+         appUrls:
+            onSubscription: https://${org}-${space}-mtx4-srv.cfapps.us10.hana.ondemand.com/mtx/v1/provisioning/tenant/{tenantId}
+
+
+
